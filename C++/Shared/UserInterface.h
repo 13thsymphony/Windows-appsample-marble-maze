@@ -74,6 +74,21 @@ protected:
 
 typedef std::set<ElementBase*> ElementSet;
 
+class PointVisualizer : public ElementBase
+{
+public:
+    PointVisualizer();
+
+    virtual void Render();
+
+    void SetCenter(D2D1_POINT_2F center);
+
+protected:
+    D2D1_COLOR_F    m_color;
+    D2D1_POINT_2F   m_center;
+    float           m_sizeDips;
+};
+
 class TextElement : public ElementBase
 {
 public:

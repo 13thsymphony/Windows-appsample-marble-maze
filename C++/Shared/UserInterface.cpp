@@ -176,6 +176,37 @@ D2D1_RECT_F ElementBase::GetBounds()
 
 #pragma endregion
 
+#pragma region PointVisualizer
+
+PointVisualizer::PointVisualizer() :
+    m_color(D2D1::ColorF(D2D1::ColorF::Aquamarine)),
+    m_center(D2D1::Point2F()),
+    m_sizeDips(10.0f)
+{
+}
+
+void PointVisualizer::Render()
+{
+    auto ctx = UserInterface::GetD2DContext();
+
+    ComPtr<ID2D1SolidColorBrush> brush;
+    DX::ThrowIfFailed(ctx->CreateSolidColorBrush(m_color, &brush));
+
+    ctx->FillRectangle(m_container, brush.Get());
+}
+
+void PointVisualizer::SetCenter(D2D1_POINT_2F center)
+{
+    m_center = center;
+
+    m_container.bottom = m_center.y + m_sizeDips / 2.0f;
+    m_container.top    = m_center.y - m_sizeDips / 2.0f;
+    m_container.left   = m_center.x - m_sizeDips / 2.0f;
+    m_container.right  = m_center.x + m_sizeDips / 2.0f;
+}
+
+#pragma endregion
+
 #pragma region TextElement
 
 TextElement::TextElement():
@@ -730,3 +761,4 @@ void UserInterface::HitTest(D2D1_POINT_2F point)
 }
 
 #pragma endregion
+

@@ -128,6 +128,7 @@ namespace MarbleMaze
         TextElement     m_checkpointText;
         TextButton      m_pausedText;
         TextElement     m_resultsText;
+        PointVisualizer m_pointViz;
         HighScoreEntry  m_newHighScore;
         typedef std::map<int, XMFLOAT2> TouchMap;
         TouchMap        m_touches;

@@ -32,6 +32,15 @@ inline void InflateRect(D2D1_RECT_F& rect, float x, float y)
     rect.bottom += y;
 }
 
+inline Windows::Foundation::Point TouchToPoint(XMFLOAT2 touch, Windows::Foundation::Size bounds)
+{
+    float touchRadius = min(bounds.Width, bounds.Height);
+    float ptx = touch.x * touchRadius + (bounds.Width / 2.0f);
+    float pty = (bounds.Height / 2.0f) - touch.y * touchRadius;
+
+    return Windows::Foundation::Point(ptx, pty);
+}
+
 // Loads and initializes application assets when the application is loaded.
 MarbleMazeMain::MarbleMazeMain(const std::shared_ptr<DX::DeviceResources>& deviceResources) : 
     m_deviceResources(deviceResources),
@@ -234,6 +243,8 @@ void MarbleMazeMain::CreateWindowSizeDependentResources()
     m_resultsText.GetTextStyle().SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     m_resultsText.GetTextStyle().SetFontSize(36.0f);
     UserInterface::GetInstance().RegisterElement(&m_resultsText);
+
+    UserInterface::GetInstance().RegisterElement(&m_pointViz);
 
     if ((!m_deferredResourcesReady) && m_loadScreen != nullptr)
     {
@@ -693,218 +704,231 @@ void MarbleMazeMain::Update()
 {
     // Update scene objects.
     m_timer.Tick([&]()
-    {
-        // When the game is first loaded, we display a load screen
-        // and load any deferred resources that might be too expensive
-        // to load during initialization.
-        if (!m_deferredResourcesReady)
         {
-            // At this point we can draw a progress bar, or if we had
-            // loaded audio, we could play audio during the loading process.
-            return;
-        }
+            // When the game is first loaded, we display a load screen
+            // and load any deferred resources that might be too expensive
+            // to load during initialization.
+            if (!m_deferredResourcesReady)
+            {
+                // At this point we can draw a progress bar, or if we had
+                // loaded audio, we could play audio during the loading process.
+                return;
+            }
 
-        if (!m_audio.m_isAudioStarted)
-        {
-            m_audio.Start();
-        }
+            if (!m_audio.m_isAudioStarted)
+            {
+                m_audio.Start();
+            }
 
-        UserInterface::GetInstance().Update(static_cast<float>(m_timer.GetTotalSeconds()), static_cast<float>(m_timer.GetElapsedSeconds()));
+            UserInterface::GetInstance().Update(static_cast<float>(m_timer.GetTotalSeconds()), static_cast<float>(m_timer.GetElapsedSeconds()));
 
-		if (m_gameState == GameState::Initial)
-		{
-			SetGameState(GameState::MainMenu);
-		}
+            if (m_gameState == GameState::Initial)
+            {
+                SetGameState(GameState::MainMenu);
+            }
 
-        switch (m_gameState)
-        {
-        case GameState::PreGameCountdown:
-			if (m_preGameCountdownTimer.IsCountdownComplete())
-			{
-				SetGameState(GameState::InGameActive);
-			}
-            break;
-        }
+            switch (m_gameState)
+            {
+            case GameState::PreGameCountdown:
+                if (m_preGameCountdownTimer.IsCountdownComplete())
+                {
+                    SetGameState(GameState::InGameActive);
+                }
+                break;
+            }
 
 #pragma region Process Input
 
-        float combinedTiltX = 0.0f;
-        float combinedTiltY = 0.0f;
+            float combinedTiltX = 0.0f;
+            float combinedTiltY = 0.0f;
 
-        // Check whether the user paused or resumed the game.
-        if (ButtonJustPressed(GamepadButtons::Menu) || m_pauseKeyPressed)
-        {
-            m_pauseKeyPressed = false;
-
-			if (m_gameState == GameState::InGameActive)
-			{
-				SetGameState(GameState::InGamePaused);
-			}  
-			else if (m_gameState == GameState::InGamePaused)
-			{
-				SetGameState(GameState::InGameActive);
-			}
-        }
-
-        // Check whether the user restarted the game or cleared the high score table.
-        if (ButtonJustPressed(GamepadButtons::View) || m_homeKeyPressed)
-        {
-            m_homeKeyPressed = false;
-
-            if (m_gameState == GameState::InGameActive ||
-                m_gameState == GameState::InGamePaused ||
-                m_gameState == GameState::PreGameCountdown)
+            // Check whether the user paused or resumed the game.
+            if (ButtonJustPressed(GamepadButtons::Menu) || m_pauseKeyPressed)
             {
-                SetGameState(GameState::MainMenu);
-                m_inGameStopwatchTimer.SetVisible(false);
-                m_preGameCountdownTimer.SetVisible(false);
+                m_pauseKeyPressed = false;
+
+                if (m_gameState == GameState::InGameActive)
+                {
+                    SetGameState(GameState::InGamePaused);
+                }
+                else if (m_gameState == GameState::InGamePaused)
+                {
+                    SetGameState(GameState::InGameActive);
+                }
             }
-            else if (m_gameState == GameState::HighScoreDisplay)
+
+            // Check whether the user restarted the game or cleared the high score table.
+            if (ButtonJustPressed(GamepadButtons::View) || m_homeKeyPressed)
             {
-                m_highScoreTable.Reset();
+                m_homeKeyPressed = false;
+
+                if (m_gameState == GameState::InGameActive ||
+                    m_gameState == GameState::InGamePaused ||
+                    m_gameState == GameState::PreGameCountdown)
+                {
+                    SetGameState(GameState::MainMenu);
+                    m_inGameStopwatchTimer.SetVisible(false);
+                    m_preGameCountdownTimer.SetVisible(false);
+                }
+                else if (m_gameState == GameState::HighScoreDisplay)
+                {
+                    m_highScoreTable.Reset();
+                }
             }
-        }
 
-        // Check whether the user chose a button from the UI.
-        bool anyPoints = !m_pointQueue.empty();
+            // Check whether the user chose a button from the UI.
+            bool anyPoints = !m_pointQueue.empty();
 
-        while (!m_pointQueue.empty())
-        {
-            UserInterface::GetInstance().HitTest(m_pointQueue.front());
-            m_pointQueue.pop();
-        }
-
-        // Handle menu navigation.
-        bool chooseSelection = (ButtonJustPressed(GamepadButtons::A) || ButtonJustPressed(GamepadButtons::Menu));
-		bool moveUp = ButtonJustPressed(GamepadButtons::DPadUp);
-		bool moveDown = ButtonJustPressed(GamepadButtons::DPadDown);
-
-        switch (m_gameState)
-        {
-        case GameState::MainMenu:
-            if (chooseSelection)
+            while (!m_pointQueue.empty())
             {
-                m_audio.PlaySoundEffect(MenuSelectedEvent);
-				if (m_startGameButton.GetSelected())
-				{
-					m_startGameButton.SetPressed(true);
-				}
-				if (m_highScoreButton.GetSelected())
-				{
-					m_highScoreButton.SetPressed(true);
-				}
+                UserInterface::GetInstance().HitTest(m_pointQueue.front());
+                m_pointQueue.pop();
             }
-            if (moveUp || moveDown)
+
+            // Handle menu navigation.
+            bool chooseSelection = (ButtonJustPressed(GamepadButtons::A) || ButtonJustPressed(GamepadButtons::Menu));
+            bool moveUp = ButtonJustPressed(GamepadButtons::DPadUp);
+            bool moveDown = ButtonJustPressed(GamepadButtons::DPadDown);
+
+            switch (m_gameState)
             {
-                m_startGameButton.SetSelected(!m_startGameButton.GetSelected());
-                m_highScoreButton.SetSelected(!m_startGameButton.GetSelected());
-                m_audio.PlaySoundEffect(MenuChangeEvent);
+            case GameState::MainMenu:
+                if (chooseSelection)
+                {
+                    m_audio.PlaySoundEffect(MenuSelectedEvent);
+                    if (m_startGameButton.GetSelected())
+                    {
+                        m_startGameButton.SetPressed(true);
+                    }
+                    if (m_highScoreButton.GetSelected())
+                    {
+                        m_highScoreButton.SetPressed(true);
+                    }
+                }
+                if (moveUp || moveDown)
+                {
+                    m_startGameButton.SetSelected(!m_startGameButton.GetSelected());
+                    m_highScoreButton.SetSelected(!m_startGameButton.GetSelected());
+                    m_audio.PlaySoundEffect(MenuChangeEvent);
+                }
+                break;
+
+            case GameState::HighScoreDisplay:
+                if (chooseSelection || anyPoints)
+                {
+                    SetGameState(GameState::MainMenu);
+                }
+                break;
+
+            case GameState::PostGameResults:
+                if (chooseSelection || anyPoints)
+                {
+                    SetGameState(GameState::HighScoreDisplay);
+                }
+                break;
+
+            case GameState::InGamePaused:
+                if (m_pausedText.IsPressed())
+                {
+                    m_pausedText.SetPressed(false);
+                    SetGameState(GameState::InGameActive);
+                }
+                break;
             }
-            break;
 
-        case GameState::HighScoreDisplay:
-			if (chooseSelection || anyPoints)
-			{
-				SetGameState(GameState::MainMenu);
-			}
-            break;
-
-        case GameState::PostGameResults:
-			if (chooseSelection || anyPoints)
-			{
-				SetGameState(GameState::HighScoreDisplay);
-			}
-            break;
-
-        case GameState::InGamePaused:
-            if (m_pausedText.IsPressed())
+            // Update the game state if the user chose a menu option.
+            if (m_startGameButton.IsPressed())
             {
-                m_pausedText.SetPressed(false);
-                SetGameState(GameState::InGameActive);
+                SetGameState(GameState::PreGameCountdown);
+                m_startGameButton.SetPressed(false);
             }
-            break;
-        }
 
-        // Update the game state if the user chose a menu option.
-        if (m_startGameButton.IsPressed())
-        {
-            SetGameState(GameState::PreGameCountdown);
-            m_startGameButton.SetPressed(false);
-        }
+            if (m_highScoreButton.IsPressed())
+            {
+                SetGameState(GameState::HighScoreDisplay);
+                m_highScoreButton.SetPressed(false);
+            }
 
-        if (m_highScoreButton.IsPressed())
-        {
-            SetGameState(GameState::HighScoreDisplay);
-            m_highScoreButton.SetPressed(false);
-        }
-
-		// Process controller input.
+            // Process controller input.
 #if WINAPI_FAMILY != WINAPI_FAMILY_PHONE_APP // Only process controller input when the device is not a phone.
 
-		if (m_currentGamepadNeedsRefresh)
-		{
-			auto mostRecentGamepad = GetLastGamepad();
+            if (m_currentGamepadNeedsRefresh)
+            {
+                auto mostRecentGamepad = GetLastGamepad();
 
-			if (m_gamepad != mostRecentGamepad)
-			{
-				m_gamepad = mostRecentGamepad;
-			}
+                if (m_gamepad != mostRecentGamepad)
+                {
+                    m_gamepad = mostRecentGamepad;
+                }
 
-			m_currentGamepadNeedsRefresh = false;
-		}
+                m_currentGamepadNeedsRefresh = false;
+            }
 
-		if (m_gamepad != nullptr)
-		{
-			m_oldReading = m_newReading;
-			m_newReading = m_gamepad->GetCurrentReading();
-		}
+            if (m_gamepad != nullptr)
+            {
+                m_oldReading = m_newReading;
+                m_newReading = m_gamepad->GetCurrentReading();
+            }
 
-		float leftStickX = static_cast<float>(m_newReading.LeftThumbstickX);
-		float leftStickY = static_cast<float>(m_newReading.LeftThumbstickY);
+            float leftStickX = static_cast<float>(m_newReading.LeftThumbstickX);
+            float leftStickY = static_cast<float>(m_newReading.LeftThumbstickY);
 
-		auto oppositeSquared = leftStickY * leftStickY;
-		auto adjacentSquared = leftStickX * leftStickX;
+            auto oppositeSquared = leftStickY * leftStickY;
+            auto adjacentSquared = leftStickX * leftStickX;
 
-		if ((oppositeSquared + adjacentSquared) > m_deadzoneSquared)
-		{
-			combinedTiltX += leftStickX * m_controllerScaleFactor;
-			combinedTiltY += leftStickY * m_controllerScaleFactor;
-		}
+            if ((oppositeSquared + adjacentSquared) > m_deadzoneSquared)
+            {
+                combinedTiltX += leftStickX * m_controllerScaleFactor;
+                combinedTiltY += leftStickY * m_controllerScaleFactor;
+            }
 
 #endif
 
-        // Account for touch input.
-        for (TouchMap::const_iterator iter = m_touches.cbegin(); iter != m_touches.cend(); ++iter)
-        {
-            combinedTiltX += iter->second.x * m_touchScaleFactor;
-            combinedTiltY += iter->second.y * m_touchScaleFactor;
-        }
-
-        // Account for sensors.
-        if (m_accelerometer != nullptr)
-        {
-            Windows::Devices::Sensors::AccelerometerReading^ reading =
-                m_accelerometer->GetCurrentReading();
-
-            if (reading != nullptr)
+            // Account for touch input.
+            for (TouchMap::const_iterator iter = m_touches.cbegin(); iter != m_touches.cend(); ++iter)
             {
-                combinedTiltX += static_cast<float>(reading->AccelerationX) * m_accelerometerScaleFactor;
-                combinedTiltY += static_cast<float>(reading->AccelerationY) * m_accelerometerScaleFactor;
+                combinedTiltX += iter->second.x * m_touchScaleFactor;
+                combinedTiltY += iter->second.y * m_touchScaleFactor;
             }
-        }
 
-        // Clamp input.
-        combinedTiltX = max(-1, min(1, combinedTiltX));
-        combinedTiltY = max(-1, min(1, combinedTiltY));
+            // Account for sensors.
+            if (m_accelerometer != nullptr)
+            {
+                Windows::Devices::Sensors::AccelerometerReading^ reading =
+                    m_accelerometer->GetCurrentReading();
 
-        if (m_gameState != GameState::PreGameCountdown &&
-            m_gameState != GameState::InGameActive &&
-            m_gameState != GameState::InGamePaused)
-        {
-            // Ignore tilt when the menu is active.
-            combinedTiltX = 0.0f;
-            combinedTiltY = 0.0f;
-        }
+                if (reading != nullptr)
+                {
+                    combinedTiltX += static_cast<float>(reading->AccelerationX) * m_accelerometerScaleFactor;
+                    combinedTiltY += static_cast<float>(reading->AccelerationY) * m_accelerometerScaleFactor;
+                }
+            }
+
+            // Clamp input.
+            combinedTiltX = max(-1, min(1, combinedTiltX));
+            combinedTiltY = max(-1, min(1, combinedTiltY));
+
+            if (m_gameState != GameState::PreGameCountdown &&
+                m_gameState != GameState::InGameActive &&
+                m_gameState != GameState::InGamePaused)
+            {
+                // Ignore tilt when the menu is active.
+                combinedTiltX = 0.0f;
+                combinedTiltY = 0.0f;
+            }
+
+            // Debug: visualize the net input on the render target.
+            if (combinedTiltX != 0.0f && combinedTiltX != 0.0f)
+            {
+                m_pointViz.SetVisible(true);
+                auto point = XMFLOAT2(combinedTiltX, combinedTiltY);
+                auto center = TouchToPoint(point, m_deviceResources->GetLogicalSize());
+                m_pointViz.SetCenter(D2D1::Point2F(center.X, center.Y));
+            }
+            else
+            {
+                m_pointViz.SetVisible(false);
+            }
 
 #pragma endregion
 
